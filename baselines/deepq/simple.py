@@ -14,6 +14,7 @@ from baselines import deepq
 from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from baselines.deepq.utils import BatchInput, load_state, save_state
 
+import IPython
 
 class ActWrapper(object):
     def __init__(self, act, act_params):
@@ -216,6 +217,10 @@ def learn(env,
     saved_mean_reward = None
     obs = env.reset()
     reset = True
+    q_values = debug['q_values']
+    x0 = obs.copy()
+    q_start = q_values(x0[None]).copy()
+    print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
         model_file = os.path.join(td, "model")
@@ -272,6 +277,11 @@ def learn(env,
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
+                print("x0: " + str(x0))
+                __values = q_values(x0[None])
+                print("Q_values: " + str(__values))
+                print("Best action: " + str(np.argmax(__values)))
+
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
@@ -292,4 +302,10 @@ def learn(env,
                 logger.log("Restored model with mean reward: {}".format(saved_mean_reward))
             load_state(model_file)
 
-    return act
+    obs = env.reset()
+    q_end = q_values(x0[None]).copy()
+    print("Q_start " + str(q_start))
+    print("Q_end: " + str(q_end))
+    print("Q_diff: " + str(q_end - q_start))
+
+    return act, debug

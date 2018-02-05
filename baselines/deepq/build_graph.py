@@ -163,8 +163,15 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
                          outputs=output_actions,
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
+
+        _evalq = U.function(inputs=[observations_ph],
+                                outputs=[q_values])
+
         def act(ob, stochastic=True, update_eps=-1):
             return _act(ob, stochastic, update_eps)
+        def evalq(ob):
+            return _evalq(ob)
+
         return act
 
 

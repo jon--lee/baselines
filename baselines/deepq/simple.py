@@ -213,6 +213,13 @@ def learn(env,
     U.initialize()
     update_target()
 
+    log_data = {
+        "mean_reward": [],
+        "iteration": [],
+        "q_values": [],
+        "samples": []
+    }
+
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
@@ -220,7 +227,7 @@ def learn(env,
     q_values = debug['q_values']
     x0 = obs.copy()
     q_start = q_values(x0[None]).copy()
-    print("Q_start: " + str(q_start))
+    # print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
         model_file = os.path.join(td, "model")
@@ -277,16 +284,21 @@ def learn(env,
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
-                print("x0: " + str(x0))
+                print("obs: " + str(obs))
                 __values = q_values(x0[None])
-                print("Q_values: " + str(__values))
-                print("Best action: " + str(np.argmax(__values)))
+                # print("Q_values: " + str(__values))
+                # print("Best action: " + str(np.argmax(__values)))
 
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 logger.dump_tabular()
+
+                log_data['samples'].append(num_episodes)
+                log_data['mean_reward'].append(mean_100ep_reward)
+                log_data['q_values'].append(__values.copy())
+
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
@@ -304,8 +316,12 @@ def learn(env,
 
     obs = env.reset()
     q_end = q_values(x0[None]).copy()
-    print("Q_start " + str(q_start))
-    print("Q_end: " + str(q_end))
-    print("Q_diff: " + str(q_end - q_start))
+    # print("Q_start " + str(q_start))
+    # print("Q_end: " + str(q_end))
+    # print("Q_diff: " + str(q_end - q_start))
+
+    for key in log_data.keys():
+        log_data[key] = np.array(log_data[key])
+    debug['log_data'] = log_data
 
     return act, debug

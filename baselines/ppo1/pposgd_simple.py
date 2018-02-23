@@ -7,6 +7,7 @@ from baselines.common.mpi_adam import MpiAdam
 from baselines.common.mpi_moments import mpi_moments
 from mpi4py import MPI
 from collections import deque
+import IPython
 
 def traj_segment_generator(pi, env, horizon, stochastic):
     t = 0
@@ -211,6 +212,8 @@ def learn(env, policy_fn, *,
         logger.record_tabular("TimeElapsed", time.time() - tstart)
         if MPI.COMM_WORLD.Get_rank()==0:
             logger.dump_tabular()
+
+    return pi
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]

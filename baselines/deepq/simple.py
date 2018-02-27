@@ -84,6 +84,7 @@ def learn(env,
           max_timesteps=100000,
           buffer_size=50000,
           exploration_fraction=0.1,
+          exploration_start_eps=0.3,
           exploration_final_eps=0.02,
           train_freq=1,
           batch_size=32,
@@ -98,6 +99,7 @@ def learn(env,
           prioritized_replay_beta_iters=None,
           prioritized_replay_eps=1e-6,
           param_noise=False,
+          multiple_updates=1,
           callback=None):
     """Train a deepq model.
 
@@ -123,6 +125,8 @@ def learn(env,
         size of the replay buffer
     exploration_fraction: float
         fraction of entire training period over which the exploration rate is annealed
+    exploration_start_eps: float
+        star value of random action probability
     exploration_final_eps: float
         final value of random action probability
     train_freq: int
@@ -154,6 +158,8 @@ def learn(env,
         to 1.0. If set to None equals to max_timesteps.
     prioritized_replay_eps: float
         epsilon to add to the TD errors when updating priorities.
+    multiple_updates: bool
+        Indicates whether dqn should do multiple update_targets per update.
     callback: (locals, globals) -> None
         function called at every steps with state of the algorithm.
         If callback returns true training stops.
@@ -206,7 +212,7 @@ def learn(env,
         beta_schedule = None
     # Create the schedule for exploration starting from 1.
     exploration = LinearSchedule(schedule_timesteps=int(exploration_fraction * max_timesteps),
-                                 initial_p=1.0,
+                                 initial_p=exploration_start_eps,
                                  final_p=exploration_final_eps)
 
     # Initialize the parameters and copy them to the target network.
@@ -225,6 +231,7 @@ def learn(env,
     obs = env.reset()
     reset = True
     q_values = debug['q_values']
+    debug['td_errors'] = []
     x0 = obs.copy()
     q_start = q_values(x0[None]).copy()
     # print("Q_start: " + str(q_start))
@@ -266,16 +273,19 @@ def learn(env,
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-                if prioritized_replay:
-                    experience = replay_buffer.sample(batch_size, beta=beta_schedule.value(t))
-                    (obses_t, actions, rewards, obses_tp1, dones, weights, batch_idxes) = experience
-                else:
-                    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
-                    weights, batch_idxes = np.ones_like(rewards), None
-                td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
-                if prioritized_replay:
-                    new_priorities = np.abs(td_errors) + prioritized_replay_eps
-                    replay_buffer.update_priorities(batch_idxes, new_priorities)
+                for k in range(multiple_updates):
+                    if prioritized_replay:
+                        experience = replay_buffer.sample(batch_size, beta=beta_schedule.value(t))
+                        (obses_t, actions, rewards, obses_tp1, dones, weights, batch_idxes) = experience
+                    else:
+                        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+                        weights, batch_idxes = np.ones_like(rewards), None
+                    td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
+                    if prioritized_replay:
+                        new_priorities = np.abs(td_errors) + prioritized_replay_eps
+                        replay_buffer.update_priorities(batch_idxes, new_priorities)
+
+                debug['td_errors'].append(td_errors)
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.

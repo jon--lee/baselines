@@ -14,6 +14,7 @@ from baselines import deepqmax4 as deepqmax
 from baselines.deepqmax4.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from baselines.deepqmax4.utils import BatchInput, load_state, save_state
 
+from scipy.optimize import minimize
 import IPython
 
 class ActWrapper(object):
@@ -78,28 +79,36 @@ def load(path):
     return ActWrapper.load(path)
 
 def featurize(env, xs, us):
-    assert(us is not None)
-    try:    A, B = env.env.index_dyn(us)
-    except: A, B = env.index_dyn(us)
-    controls = np.hstack((A.flatten()[None].T, B.flatten()[None].T))
-    res = np.hstack((xs, controls))
+    res = np.hstack((xs, np.array(us)))
     return res
 
 
-def policy_control(env, q_values, xs):
-    n = env.action_space.n
-    index_controls = np.zeros(xs.shape[0])
+def policy_control(env, q_values, xs, stop=False):
+    try:    
+        d = env.env.num_params
+        bounds = env.env.bounds
+    except: 
+        d = env.num_params
+        bounds = env.bounds
+    controls = np.zeros((xs.shape[0], d))
+
     for j, x in enumerate(xs):
-        try:    A, B = env.env.index_dyn(np.arange(n))
-        except: A, B = env.index_dyn(np.arange(n))
-        controls = np.hstack((A.flatten()[None].T, B.flatten()[None].T))
-        x_vec = np.tile(x, (n, 1))
-        obs = np.hstack((x_vec, controls))
-        values = q_values(obs)
 
-        index_controls[j] = np.argmax(values)
+        def f(u):
+            res = np.hstack((x, u))
+            value = -q_values(np.array([res]))[0]
+            return value[0]
 
-    return index_controls.astype(int)
+        if stop:
+            IPython.embed()
+
+        x0 = np.random.normal(0, .01, d)
+        # print("initial state: " + str(x0))
+        res = minimize(f, x0, bounds=bounds, options={'disp': False})
+        u = res['x']
+        controls[j, :] = u
+
+    return controls
 
 
 def learn(env,
@@ -202,7 +211,6 @@ def learn(env,
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
     observation_space_shape = env.observation_space.shape[0]
-    action_space_shape = env.action_space.n
     def make_obs_ph(name):
         return BatchInput([observation_space_shape + env.env.num_params], name=name)
 
@@ -285,7 +293,9 @@ def learn(env,
 
             # action = act(featurize(env, np.array(obs)[None]), update_eps=update_eps, **kwargs)[0]
             # action = policy_control(env, q_values, np.array(obs)[None])[0]
-            action = np.random.randint(0, env.action_space.n)
+            # action = np.random.randint(0, env.action_space.n)
+            action = np.random.uniform(env.env.ac_low, env.env.ac_high)
+            # policy_control(env.env, q_values, obs[None])
 
             env_action = action
             reset = False

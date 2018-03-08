@@ -10,9 +10,9 @@ import gym
 import baselines.common.tf_util as U
 from baselines import logger
 from baselines.common.schedules import LinearSchedule
-from baselines import deepq
-from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
-from baselines.deepq.utils import BatchInput, load_state, save_state
+from baselines import deepqmax
+from baselines.deepqmax.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from baselines.deepqmax.utils import BatchInput, load_state, save_state
 
 import IPython
 
@@ -25,7 +25,7 @@ class ActWrapper(object):
     def load(path):
         with open(path, "rb") as f:
             model_data, act_params = cloudpickle.load(f)
-        act = deepq.build_act(**act_params)
+        act = deepqmax.build_act(**act_params)
         sess = tf.Session()
         sess.__enter__()
         with tempfile.TemporaryDirectory() as td:
@@ -76,6 +76,13 @@ def load(path):
         and returns actions.
     """
     return ActWrapper.load(path)
+
+def featurize(env, x, a=None):
+    actions = np.zeros(env.action_space.n)
+    tmp = np.ones((x.shape[0], env.action_space.n)) 
+    actions = tmp * actions
+    res = np.hstack((x, actions))
+    return res
 
 
 def learn(env,
@@ -177,11 +184,12 @@ def learn(env,
 
     # capture the shape outside the closure so that the env object is not serialized
     # by cloudpickle when serializing make_obs_ph
-    observation_space_shape = env.observation_space.shape
+    observation_space_shape = env.observation_space.shape[0]
+    action_space_shape = env.action_space.n
     def make_obs_ph(name):
-        return BatchInput(observation_space_shape, name=name)
+        return BatchInput([observation_space_shape + action_space_shape], name=name)
 
-    act, train, update_target, debug = deepq.build_train(
+    act, train, update_target, debug = deepqmax.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
@@ -233,7 +241,7 @@ def learn(env,
     q_values = debug['q_values']
     debug['td_errors'] = []
     x0 = obs.copy()
-    q_start = q_values(x0[None]).copy()
+    q_start = q_values(featurize(env, x0[None])).copy()
     # print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
@@ -257,7 +265,7 @@ def learn(env,
                 kwargs['reset'] = reset
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = True
-            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+            action = act(featurize(env, np.array(obs)[None]), update_eps=update_eps, **kwargs)[0]
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
@@ -274,14 +282,14 @@ def learn(env,
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-                for _ in range(multiple_updates):
+                for k in range(multiple_updates):
                     if prioritized_replay:
                         experience = replay_buffer.sample(batch_size, beta=beta_schedule.value(t))
                         (obses_t, actions, rewards, obses_tp1, dones, weights, batch_idxes) = experience
                     else:
                         obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
                         weights, batch_idxes = np.ones_like(rewards), None
-                    td_errors = train(obses_t, actions, rewards, obses_tp1, dones, weights)
+                    td_errors = train(featurize(env, obses_t), actions, rewards, featurize(env, obses_tp1), dones, weights)
                     if prioritized_replay:
                         new_priorities = np.abs(td_errors) + prioritized_replay_eps
                         replay_buffer.update_priorities(batch_idxes, new_priorities)
@@ -296,7 +304,7 @@ def learn(env,
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
                 print("obs: " + str(obs))
-                __values = q_values(x0[None])
+                __values = q_values(featurize(env, x0[None]))
                 # print("Q_values: " + str(__values))
                 # print("Best action: " + str(np.argmax(__values)))
 
@@ -326,7 +334,7 @@ def learn(env,
             load_state(model_file)
 
     obs = env.reset()
-    q_end = q_values(x0[None]).copy()
+    q_end = q_values(featurize(env, x0[None])).copy()
     # print("Q_start " + str(q_start))
     # print("Q_end: " + str(q_end))
     # print("Q_diff: " + str(q_end - q_start))

@@ -83,29 +83,31 @@ def featurize(env, xs, us):
     return res
 
 
-def policy_control(env, q_values, xs, stop=False):
+def policy_control(env, q_values, input_var, train_inputs, xs, stop=False):
     try:    
         d = env.env.num_params
         bounds = env.env.bounds
+        ac_low, ac_high = env.env.ac_low, env.env.ac_high
     except: 
         d = env.num_params
         bounds = env.bounds
+        ac_low, ac_high = env.ac_low, env.ac_high
     controls = np.zeros((xs.shape[0], d))
 
     for j, x in enumerate(xs):
 
-        def f(u):
-            res = np.hstack((x, u))
-            value = -q_values(np.array([res]))[0]
-            return value[0]
+        res = tf.variables_initializer([input_var]).run()
+        # input_var.assign([[.02, .02]]).eval()
+        for _ in range(10):
+            results = train_inputs([x])
+            new_value = results[0]
+            if np.any(new_value > ac_high) or np.any(new_value < ac_low):
+                break
 
-        if stop:
-            IPython.embed()
+        print("Final value: " + str(results[1]))
+        print("Final params: " + str(results[0]))
+        u = np.clip(new_value, ac_low, ac_high)
 
-        x0 = np.random.normal(0, .01, d)
-        # print("initial state: " + str(x0))
-        res = minimize(f, x0, bounds=bounds, options={'disp': False})
-        u = res['x']
         controls[j, :] = u
 
     return controls
@@ -259,11 +261,16 @@ def learn(env,
         "samples": []
     }
 
+
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
     reset = True
     q_values = debug['q_values']
+    q_t_var = debug['q_t_var']
+    input_var = debug['input_var']
+    train_inputs = debug['train_inputs']
+
     debug['td_errors'] = []
     x0 = obs.copy()
     # q_start = q_values(featurize(env, x0[None])).copy()
@@ -326,6 +333,7 @@ def learn(env,
                         replay_buffer.update_priorities(batch_idxes, new_priorities)
 
                 debug['td_errors'].append(td_errors)
+
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.

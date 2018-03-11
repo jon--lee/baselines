@@ -152,6 +152,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
         q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
         deterministic_actions = tf.argmax(q_values, axis=1)
 
+
         batch_size = tf.shape(observations_ph.get())[0]
         random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
         chose_random = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=1, dtype=tf.float32) < eps
@@ -359,6 +360,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
+         
+         
         q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
@@ -403,6 +406,20 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             update_target_expr.append(var_target.assign(var))
         update_target_expr = tf.group(*update_target_expr)
 
+        # input_var = tf.Variable(tf.random_normal([1, 3], stddev=.15))      
+         
+        ###################### SET THESE DEPENDING ON STATE AND ACTION SPACE DIMENSIONS #####################
+        state_ph = tf.placeholder(tf.float32, shape=(1, 1))
+        input_var = tf.get_variable("input_var", shape=(1, 2), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=.01))
+
+        concat = tf.concat((state_ph, input_var), 1)
+        q_t_var = q_func(concat, num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+
+        optimizer2 = tf.train.GradientDescentOptimizer(.1)
+        optimize_inputs = optimizer2.minimize(-q_t_var, var_list=[input_var])
+
+        ###################### END SET THESE
+
         # Create callable functions
         train = U.function(
             inputs=[
@@ -416,8 +433,16 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             outputs=td_error,
             updates=[optimize_expr]
         )
+
+        train_inputs = U.function(
+            inputs=[state_ph],
+            outputs=[input_var, q_t_var],
+            updates=[optimize_inputs]
+        )
+
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
+        q_t_var = U.function([obs_t_input], q_t_var)
 
-        return act_f, train, update_target, {'q_values': q_values}
+        return act_f, train, update_target, {'train_inputs': train_inputs, 'input_var': input_var, 'q_values': q_values, 'q_t_var': q_t_var}

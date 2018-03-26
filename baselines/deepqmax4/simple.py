@@ -83,7 +83,7 @@ def featurize(env, xs, us):
     return res
 
 
-def policy_control(env, q_values, input_var, train_inputs, xs, stop=False):
+def policy_control(env, q_values, input_var, train_inputs, clipper, xs, iterations):
     try:    
         d = env.env.num_params
         bounds = env.env.bounds
@@ -98,14 +98,15 @@ def policy_control(env, q_values, input_var, train_inputs, xs, stop=False):
 
         res = tf.variables_initializer([input_var]).run()
         # input_var.assign([[.02, .02]]).eval()
-        for _ in range(10):
+        for _ in range(iterations):
             results = train_inputs([x])
+            clipper.eval()
             new_value = results[0]
-            if np.any(new_value > ac_high) or np.any(new_value < ac_low):
-                break
+            # if np.any(new_value > ac_high) or np.any(new_value < ac_low):
+            #     break
 
-        print("Final value: " + str(results[1]))
-        print("Final params: " + str(results[0]))
+        # print("Final value: " + str(results[1]))
+        # print("Final params: " + str(results[0]))
         u = np.clip(new_value, ac_low, ac_high)
 
         controls[j, :] = u
@@ -135,7 +136,9 @@ def learn(env,
           prioritized_replay_eps=1e-6,
           param_noise=False,
           multiple_updates=1,
-          callback=None):
+          callback=None,
+          input_lr=0.1,
+          input_iterations=10):
     """Train a deepq model.
 
     Parameters
@@ -198,6 +201,8 @@ def learn(env,
     callback: (locals, globals) -> None
         function called at every steps with state of the algorithm.
         If callback returns true training stops.
+    input_lr: float
+        learning rate to be used when optimizing over inputs to select control
 
     Returns
     -------
@@ -223,7 +228,10 @@ def learn(env,
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
-        param_noise=param_noise
+        param_noise=param_noise,
+        ac_high = env.env.ac_high,
+        ac_low = env.env.ac_low,
+        input_lr=input_lr
     )
 
     act_params = {
@@ -261,7 +269,6 @@ def learn(env,
         "samples": []
     }
 
-
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
@@ -270,6 +277,8 @@ def learn(env,
     q_t_var = debug['q_t_var']
     input_var = debug['input_var']
     train_inputs = debug['train_inputs']
+    clip_inputs = debug['clip_inputs']
+    clipper = debug['clipper']
 
     debug['td_errors'] = []
     x0 = obs.copy()
@@ -277,6 +286,7 @@ def learn(env,
     # print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
+        IPython.embed()
         model_file = os.path.join(td, "model")
         for t in range(max_timesteps):
             if callback is not None:

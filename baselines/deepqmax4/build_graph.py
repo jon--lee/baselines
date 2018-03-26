@@ -290,7 +290,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
 
 
 def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
-    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
+    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, ac_low=None, ac_high=None, input_lr=.1):
     """Creates the train function:
 
     Parameters
@@ -406,17 +406,20 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             update_target_expr.append(var_target.assign(var))
         update_target_expr = tf.group(*update_target_expr)
 
-        # input_var = tf.Variable(tf.random_normal([1, 3], stddev=.15))      
          
         ###################### SET THESE DEPENDING ON STATE AND ACTION SPACE DIMENSIONS #####################
         state_ph = tf.placeholder(tf.float32, shape=(1, 1))
         input_var = tf.get_variable("input_var", shape=(1, 2), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=.01))
 
-        concat = tf.concat((state_ph, input_var), 1)
+        clipped_input_var = tf.clip_by_value(input_var, ac_low, ac_high)
+
+        concat = tf.concat((state_ph, clipped_input_var), 1)
         q_t_var = q_func(concat, num_actions, scope="q_func", reuse=True)  # reuse parameters from act
 
-        optimizer2 = tf.train.GradientDescentOptimizer(.1)
+        optimizer2 = tf.train.AdamOptimizer(input_lr)
         optimize_inputs = optimizer2.minimize(-q_t_var, var_list=[input_var])
+
+        # q_t_var is the q_value output used for the optimization of the inputs, basically just a copy of q_t
 
         ###################### END SET THESE
 
@@ -439,10 +442,22 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             outputs=[input_var, q_t_var],
             updates=[optimize_inputs]
         )
+        clip_inputs = None
 
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
         q_t_var = U.function([obs_t_input], q_t_var)
 
-        return act_f, train, update_target, {'train_inputs': train_inputs, 'input_var': input_var, 'q_values': q_values, 'q_t_var': q_t_var}
+        debug_ret = {'clip_inputs': clip_inputs, 
+                    'clipper': clipped_input_var,
+                    'train_inputs': train_inputs,
+                    'input_var': input_var, 
+                    'q_values': q_values, 
+                    'q_t_var': q_t_var,
+                    'q_func_vars': q_func_vars}
+
+        return act_f, train, update_target, debug_ret
+
+
+

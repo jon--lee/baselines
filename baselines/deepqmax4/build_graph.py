@@ -442,20 +442,25 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             outputs=[input_var, q_t_var],
             updates=[optimize_inputs]
         )
-        clip_inputs = None
+        eval_inputs = U.function(
+            inputs=[state_ph],
+            outputs=[q_t_var],
+            updates=[]
+        )
+
 
         update_target = U.function([], [], updates=[update_target_expr])
 
         q_values = U.function([obs_t_input], q_t)
         q_t_var = U.function([obs_t_input], q_t_var)
 
-        debug_ret = {'clip_inputs': clip_inputs, 
-                    'clipper': clipped_input_var,
+        debug_ret = {'clipper': clipped_input_var,
                     'train_inputs': train_inputs,
                     'input_var': input_var, 
                     'q_values': q_values, 
                     'q_t_var': q_t_var,
-                    'q_func_vars': q_func_vars}
+                    'q_func_vars': q_func_vars,
+                    'eval_inputs': eval_inputs}
 
         return act_f, train, update_target, debug_ret
 

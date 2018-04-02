@@ -83,7 +83,13 @@ def featurize(env, xs, us):
     return res
 
 
-def policy_control(env, q_values, input_var, train_inputs, clipper, xs, iterations):
+def policy_control(env, graph_args, xs, iterations):
+    q_values = graph_args['q_values']
+    input_var = graph_args['input_var']
+    train_inputs = graph_args['train_inputs']
+    clipper = graph_args['clipper']
+    eval_inputs = graph_args['eval_inputs']
+
     try:    
         d = env.env.num_params
         bounds = env.env.bounds
@@ -102,8 +108,6 @@ def policy_control(env, q_values, input_var, train_inputs, clipper, xs, iteratio
             results = train_inputs([x])
             clipper.eval()
             new_value = results[0]
-            # if np.any(new_value > ac_high) or np.any(new_value < ac_low):
-            #     break
 
         # print("Final value: " + str(results[1]))
         # print("Final params: " + str(results[0]))
@@ -112,6 +116,8 @@ def policy_control(env, q_values, input_var, train_inputs, clipper, xs, iteratio
         controls[j, :] = u
 
     return controls
+
+
 
 
 def learn(env,
@@ -269,6 +275,7 @@ def learn(env,
         "samples": []
     }
 
+    saver = tf.train.Saver(max_to_keep=None)
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
@@ -277,8 +284,8 @@ def learn(env,
     q_t_var = debug['q_t_var']
     input_var = debug['input_var']
     train_inputs = debug['train_inputs']
-    clip_inputs = debug['clip_inputs']
     clipper = debug['clipper']
+    eval_inputs = debug['eval_inputs']
 
     debug['td_errors'] = []
     x0 = obs.copy()
@@ -286,7 +293,7 @@ def learn(env,
     # print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
-        IPython.embed()
+        # IPython.embed()
         model_file = os.path.join(td, "model")
         for t in range(max_timesteps):
             if callback is not None:
@@ -393,3 +400,11 @@ def learn(env,
     debug['log_data'] = log_data
 
     return act, debug
+
+
+
+
+
+
+
+

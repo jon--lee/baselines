@@ -99,6 +99,7 @@ def policy_control(env, q_values, xs):
 
         index_controls[j] = np.argmax(values)
 
+
     return index_controls.astype(int)
 
 
@@ -251,6 +252,7 @@ def learn(env,
         "samples": []
     }
 
+    saver = tf.train.Saver(max_to_keep=None)
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()

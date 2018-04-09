@@ -255,7 +255,8 @@ def learn(env,
         "q_values": [],
         "samples": []
     }
-
+    
+    saver = tf.train.Saver(max_to_keep=None)
     episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()

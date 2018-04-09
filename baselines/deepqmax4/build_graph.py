@@ -409,13 +409,14 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
          
         ###################### SET THESE DEPENDING ON STATE AND ACTION SPACE DIMENSIONS #####################
         state_ph = tf.placeholder(tf.float32, shape=(1, 1))
-        input_var = tf.get_variable("input_var", shape=(1, 2), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=.01))
+        input_var = tf.get_variable("input_var", shape=(1, 2), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=0.5))
 
         clipped_input_var = tf.clip_by_value(input_var, ac_low, ac_high)
 
         concat = tf.concat((state_ph, clipped_input_var), 1)
         q_t_var = q_func(concat, num_actions, scope="q_func", reuse=True)  # reuse parameters from act
 
+        # optimizer2 = tf.train.AdamOptimizer(.001)
         optimizer2 = tf.train.AdamOptimizer(input_lr)
         optimize_inputs = optimizer2.minimize(-q_t_var, var_list=[input_var])
 
@@ -439,15 +440,16 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
         train_inputs = U.function(
             inputs=[state_ph],
-            outputs=[input_var, q_t_var],
+            outputs=[input_var, q_t_var, clipped_input_var],
             updates=[optimize_inputs]
         )
         eval_inputs = U.function(
             inputs=[state_ph],
-            outputs=[q_t_var],
+            outputs=[q_t_var, input_var],
             updates=[]
         )
 
+        # input_grad = tf.gradients(q_values)
 
         update_target = U.function([], [], updates=[update_target_expr])
 

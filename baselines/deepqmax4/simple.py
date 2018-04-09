@@ -13,7 +13,6 @@ from baselines.common.schedules import LinearSchedule
 from baselines import deepqmax4 as deepqmax
 from baselines.deepqmax4.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 from baselines.deepqmax4.utils import BatchInput, load_state, save_state
-
 from scipy.optimize import minimize
 import IPython
 
@@ -82,14 +81,7 @@ def featurize(env, xs, us):
     res = np.hstack((xs, np.array(us)))
     return res
 
-
-def policy_control(env, graph_args, xs, iterations):
-    q_values = graph_args['q_values']
-    input_var = graph_args['input_var']
-    train_inputs = graph_args['train_inputs']
-    clipper = graph_args['clipper']
-    eval_inputs = graph_args['eval_inputs']
-
+def control_params(env):
     try:    
         d = env.env.num_params
         bounds = env.env.bounds
@@ -98,24 +90,49 @@ def policy_control(env, graph_args, xs, iterations):
         d = env.num_params
         bounds = env.bounds
         ac_low, ac_high = env.ac_low, env.ac_high
+    return d, bounds, ac_low, ac_high
+
+
+def policy_control(env, graph_args, xs, iterations):
+    q_values = graph_args['q_values']
+    input_var = graph_args['input_var']
+    train_inputs = graph_args['train_inputs']
+    clipper = graph_args['clipper']
+    eval_inputs = graph_args['eval_inputs']
+
+    # iterations = 600
+
+    debug = {'paths': []}
+
+    d, bounds, ac_low, ac_high = control_params(env)
     controls = np.zeros((xs.shape[0], d))
 
     for j, x in enumerate(xs):
-
-        res = tf.variables_initializer([input_var]).run()
-        # input_var.assign([[.02, .02]]).eval()
-        for _ in range(iterations):
-            results = train_inputs([x])
-            clipper.eval()
-            new_value = results[0]
+        best_u = None
+        best_value = -float("inf")
+        for i in range(5):
+            path = []
+            res = tf.variables_initializer([input_var]).run()
+            # input_var.assign([[.02, .02]]).eval()
+            for _ in range(iterations):
+                results = train_inputs([x])
+                clipper.eval()
+                new_value = results[2]
+                path.append(new_value[0])
+            fn_value = results[1]
+            if fn_value > best_value:
+                best_u = new_value
+                best_value = fn_value
+            debug['paths'].append(np.array(path))
 
         # print("Final value: " + str(results[1]))
         # print("Final params: " + str(results[0]))
-        u = np.clip(new_value, ac_low, ac_high)
+        u = np.clip(best_u, ac_low, ac_high)
 
         controls[j, :] = u
 
-    return controls
+    return controls, debug
+
 
 
 
@@ -144,7 +161,8 @@ def learn(env,
           multiple_updates=1,
           callback=None,
           input_lr=0.1,
-          input_iterations=10):
+          input_iterations=10
+          ):
     """Train a deepq model.
 
     Parameters
@@ -293,7 +311,6 @@ def learn(env,
     # print("Q_start: " + str(q_start))
     with tempfile.TemporaryDirectory() as td:
         model_saved = False
-        # IPython.embed()
         model_file = os.path.join(td, "model")
         for t in range(max_timesteps):
             if callback is not None:

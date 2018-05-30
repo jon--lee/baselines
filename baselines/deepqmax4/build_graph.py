@@ -408,8 +408,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
          
         ###################### SET THESE DEPENDING ON STATE AND ACTION SPACE DIMENSIONS #####################
-        state_ph = tf.placeholder(tf.float32, shape=(1, 1))
-        input_var = tf.get_variable("input_var", shape=(1, 2), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=0.5))
+        state_ph = tf.placeholder(tf.float32, shape=(1, 3))
+        input_var = tf.get_variable("input_var", shape=(1, 15), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=0.5))
 
         clipped_input_var = tf.clip_by_value(input_var, ac_low, ac_high)
 

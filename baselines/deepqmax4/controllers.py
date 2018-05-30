@@ -4,6 +4,9 @@ import IPython
 from baselines.deepqmax4.simple import featurize, control_params
 from scipy.optimize import minimize
 import cma
+from DIRECT import solve
+np.random.seed(1)
+tf.set_random_seed(1)
 
 
 
@@ -116,6 +119,7 @@ def controller2(env, graph_args, xs, iterations):
         rand = np.random.uniform(low, high)
         feat = featurize(env, x * np.ones((rounds, x.shape[0])), rand)
 
+
         values = -q_values(feat)
         index = np.argmin(values)
 
@@ -143,16 +147,15 @@ def controller3(env, graph_args, xs, iterations):
     low, high = np.tile(ac_low, (rounds, 1)), np.tile(ac_high, (rounds, 1))
     
     for j, x in enumerate(xs):
-        def f(u):
+        def f(u, user_data):
             feat = featurize(env, [x], [u])
             values = -q_values(feat)
 
             return values.item()
 
-        for i in range(rounds):
+        for i in range(1):
             x0 = np.random.uniform(ac_low, ac_high)
             bounds = list(zip(ac_low, ac_high))
-            res = minimize(f, x0, options={'disp':True})
             IPython.embed()
 
         controls[j, :] = best_u
@@ -188,7 +191,7 @@ def controller4(env, graph_args, xs, iterations):
         for i in range(rounds):
             x0 = np.random.uniform(ac_low, ac_high)
             bounds = list(zip(ac_low, ac_high))
-            es = cma.CMAEvolutionStrategy(x0, 1.0, {'bounds':[-2.0, 2.0], 'verb_disp':0, 'verbose':-1, 'maxiter':70})
+            es = cma.CMAEvolutionStrategy(x0, 1.0, {'bounds':[-2.0, 2.0], 'verb_disp':0, 'verbose':-1, 'maxiter':200})
             es.optimize(f)
             u = es.result.xbest
             value = es.result.fbest
